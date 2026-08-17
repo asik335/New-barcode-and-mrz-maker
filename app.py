@@ -136,7 +136,6 @@ def generate_netherlands_bsn() -> str:
     """Dutch BSN (9 digits, 11-proof / elfproef)."""
     while True:
         d = [random.randint(0, 9) for _ in range(8)]
-        # 11-proof: 9*d1 + 8*d2 + 7*d3 + 6*d4 + 5*d5 + 4*d6 + 3*d7 + 2*d8 - 1*d9 == 0 (mod 11)
         total = sum(d[i] * (9 - i) for i in range(8))
         d9 = total % 11
         if d9 < 10:
@@ -265,12 +264,12 @@ def build_td1_mrz_with_overflow(
     exp_san = sanitize_mrz(expiry).ljust(6, "<")[:6]
     nat_code = sanitize_mrz(nationality).ljust(3, "<")[:3]
 
-    # Handle Doc Number Overflow (>9 chars)
     if len(raw_num) > 9:
         doc_part1 = raw_num[:9]
-        doc_check = "<"  # Overflow indicator chevron
+        doc_check = "<"
         overflow = raw_num[9:]
-        opt1_content = overflow + (sanitize_mrz(optional_data1) if optional_data1 else "")
+        overflow_check = calculate_icao_check_digit(raw_num)
+        opt1_content = overflow + overflow_check + (sanitize_mrz(optional_data1) if optional_data1 else "")
         opt_field1 = opt1_content.ljust(15, "<")[:15]
     else:
         doc_part1 = raw_num.ljust(9, "<")[:9]
@@ -279,7 +278,6 @@ def build_td1_mrz_with_overflow(
 
     line1 = f"{dtype}{c_code}{doc_part1}{doc_check}{opt_field1}"
 
-    # Line 2: Personal data + Composite Checksum
     dob_check = calculate_icao_check_digit(dob_san)
     expiry_check = calculate_icao_check_digit(exp_san)
     opt_field2 = sanitize_mrz(optional_data2).ljust(11, "<")[:11]
@@ -289,7 +287,6 @@ def build_td1_mrz_with_overflow(
 
     line2 = f"{dob_san}{dob_check}{sex_san}{exp_san}{expiry_check}{nat_code}{opt_field2}{composite_check}"
 
-    # Line 3: Name
     name_payload = f"{sanitize_mrz(surname)}<<{sanitize_mrz(given_names)}".replace(" ", "<")
     line3 = name_payload.ljust(30, "<")[:30]
 
@@ -394,12 +391,6 @@ def corrupt_raw_string(raw: str, choice: str) -> str:
 st.set_page_config(page_title="Document Tools & MRZ Suite", page_icon="🪪", layout="centered")
 st.title("🪪 Document Tools & Verification Suite")
 
-tab_barcode, tab_mrz, tab_national_ids = st.tabs([
-    "📊 PDF417 Barcode Generator",
-    "🔤 Advanced MRZ Generator (9+ Overflow)",
-    "🌍 National ID & Number Generators",
-])
-
 # Initialize session state defaults
 defaults_dict = {
     "mrz_sur": "DAVIS",
@@ -411,10 +402,28 @@ defaults_dict = {
     "mrz_dob": "920119",
     "mrz_exp": "290412",
     "mrz_sex": "F",
+    "status_msg": "",
+    "bc_expiry": "01012033",
 }
 for k, v in defaults_dict.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+
+def set_to_mrz(doc_val: str, country_code: str):
+    """Callback function that safely updates session state before rendering."""
+    cleaned = doc_val.replace("-", "").replace(".", "").replace(" ", "").strip()
+    st.session_state["mrz_num"] = cleaned
+    st.session_state["mrz_country"] = country_code
+    st.session_state["mrz_nat"] = country_code
+    st.session_state["status_msg"] = f"Transferred '{cleaned}' ({country_code}) to MRZ tab!"
+
+
+tab_barcode, tab_mrz, tab_national_ids = st.tabs([
+    "📊 PDF417 Barcode Generator",
+    "🔤 Advanced MRZ Generator (9+ Overflow)",
+    "🌍 National ID & Number Generators",
+])
 
 
 # =============================================================================
@@ -460,17 +469,18 @@ with tab_barcode:
         issue_date = st.text_input("Issue Date MMDDYYYY (DBD)", "01012025")
 
         auto_calc_exp = st.checkbox("⚡ Auto-Calculate Expiry Date", value=True)
-        calculated_expiry_val = "01012033"
         parsed_issue_dt = None
         try:
             dob_dt = datetime.strptime(dob.strip(), "%m%d%Y").date()
             parsed_issue_dt = datetime.strptime(issue_date.strip(), "%m%d%Y").date()
             if auto_calc_exp:
-                calculated_expiry_val = generate_expiration_date(state_code, dob_dt, parsed_issue_dt).strftime("%m%d%Y")
+                st.session_state["bc_expiry"] = generate_expiration_date(
+                    state_code, dob_dt, parsed_issue_dt
+                ).strftime("%m%d%Y")
         except ValueError:
             pass
 
-        expiry_date = st.text_input("Expiry Date MMDDYYYY (DBA)", value=calculated_expiry_val, disabled=auto_calc_exp)
+        expiry_date = st.text_input("Expiry Date MMDDYYYY (DBA)", key="bc_expiry", disabled=auto_calc_exp)
         vehicle_class = st.text_input("Vehicle Class (DCA)", "C")
         restrictions = st.text_input("Restrictions (DCB)", "NONE")
         endorsements = st.text_input("Endorsements (DCD)", "NONE")
@@ -565,6 +575,10 @@ with tab_barcode:
 with tab_mrz:
     st.subheader("ICAO Doc 9303 Machine Readable Zone (MRZ)")
 
+    if st.session_state.get("status_msg"):
+        st.success(st.session_state["status_msg"])
+        st.session_state["status_msg"] = ""
+
     def generate_random_mrz_data():
         surnames = ["SMITH", "JOHNSON", "WILLIAMS", "BROWN", "JONES", "GARCIA", "MILLER", "DAVIS"]
         given_names = ["JAMES", "MARY", "ROBERT", "PATRICIA", "JOHN", "JENNIFER", "MICHAEL", "LINDA"]
@@ -632,7 +646,6 @@ with tab_mrz:
             dtype = doc_type_code.split(" ")[0]
 
             if "TD1" in mrz_standard:
-                # Built-in strict TD1 generator with >9 digit overflow support
                 mrz_result = build_td1_mrz_with_overflow(
                     doc_type=dtype,
                     country=c_code,
@@ -645,38 +658,50 @@ with tab_mrz:
                     given_names=g_name,
                     optional_data1=pers_num,
                 )
-            elif "TD2" in mrz_standard and HAS_MRZ_LIB:
-                mrz_result = str(
-                    TD2CodeGenerator(
-                        document_type=dtype,
-                        country_code=c_code,
-                        surname=s_name,
-                        given_names=g_name,
-                        document_number=doc_num[:9],
-                        nationality=n_code,
-                        birth_date=mrz_dob,
-                        sex=mrz_sex,
-                        expiry_date=mrz_expiry,
-                        optional_data=pers_num,
-                        force=True,
+            elif "TD2" in mrz_standard:
+                if HAS_MRZ_LIB:
+                    mrz_result = str(
+                        TD2CodeGenerator(
+                            document_type=dtype,
+                            country_code=c_code,
+                            surname=s_name,
+                            given_names=g_name,
+                            document_number=doc_num[:9],
+                            nationality=n_code,
+                            birth_date=mrz_dob,
+                            sex=mrz_sex,
+                            expiry_date=mrz_expiry,
+                            optional_data=pers_num,
+                            force=True,
+                        )
                     )
-                )
-            elif "TD3" in mrz_standard and HAS_MRZ_LIB:
-                mrz_result = str(
-                    TD3CodeGenerator(
-                        document_type=dtype,
-                        country_code=c_code,
-                        surname=s_name,
-                        given_names=g_name,
-                        document_number=doc_num[:9],
-                        nationality=n_code,
-                        birth_date=mrz_dob,
-                        sex=mrz_sex,
-                        expiry_date=mrz_expiry,
-                        optional_data=pers_num,
-                        force=True,
+                else:
+                    st.warning("⚠️ `mrz` package is not installed. Falling back to TD1 3-line format.")
+                    mrz_result = build_td1_mrz_with_overflow(
+                        dtype, c_code, doc_num, mrz_dob, mrz_sex, mrz_expiry, n_code, s_name, g_name, pers_num
                     )
-                )
+            elif "TD3" in mrz_standard:
+                if HAS_MRZ_LIB:
+                    mrz_result = str(
+                        TD3CodeGenerator(
+                            document_type=dtype,
+                            country_code=c_code,
+                            surname=s_name,
+                            given_names=g_name,
+                            document_number=doc_num[:9],
+                            nationality=n_code,
+                            birth_date=mrz_dob,
+                            sex=mrz_sex,
+                            expiry_date=mrz_expiry,
+                            optional_data=pers_num,
+                            force=True,
+                        )
+                    )
+                else:
+                    st.warning("⚠️ `mrz` package is not installed. Falling back to TD1 3-line format.")
+                    mrz_result = build_td1_mrz_with_overflow(
+                        dtype, c_code, doc_num, mrz_dob, mrz_sex, mrz_expiry, n_code, s_name, g_name, pers_num
+                    )
             else:
                 mrz_result = build_td1_mrz_with_overflow(
                     dtype, c_code, doc_num, mrz_dob, mrz_sex, mrz_expiry, n_code, s_name, g_name, pers_num
@@ -702,83 +727,116 @@ with tab_national_ids:
     st.subheader("Algorithmic National ID & Identifier Generators")
     st.caption("Generates mathematically verified national IDs using official checksum algorithms.")
 
-    def set_to_mrz(doc_val: str, country_code: str):
-        cleaned = doc_val.replace("-", "").replace(".", "").replace(" ", "").strip()
-        st.session_state["mrz_num"] = cleaned
-        st.session_state["mrz_country"] = country_code
-        st.session_state["mrz_nat"] = country_code
-        st.success(f"Copied '{cleaned}' ({country_code}) to MRZ Generator tab!")
-
     id_col1, id_col2 = st.columns(2)
 
     with id_col1:
-        # Belgium Card Number
         st.markdown("#### 🇧🇪 Belgium: ID Card Number")
         be_card = generate_belgium_card_number()
         st.code(be_card, language="text")
-        if st.button("Use Belgium Card in MRZ", key="btn_be_card", use_container_width=True):
-            set_to_mrz(be_card, "BEL")
+        st.button(
+            "Use Belgium Card in MRZ",
+            key="btn_be_card",
+            on_click=set_to_mrz,
+            args=(be_card, "BEL"),
+            use_container_width=True,
+        )
 
-        # Croatia OIB
         st.markdown("#### 🇭🇷 Croatia: OIB (ISO 7064 MOD 11, 10)")
         hr_oib = generate_croatia_oib()
         st.code(hr_oib, language="text")
-        if st.button("Use Croatia OIB in MRZ", key="btn_hr_oib", use_container_width=True):
-            set_to_mrz(hr_oib, "HRV")
+        st.button(
+            "Use Croatia OIB in MRZ",
+            key="btn_hr_oib",
+            on_click=set_to_mrz,
+            args=(hr_oib, "HRV"),
+            use_container_width=True,
+        )
 
-        # Spain DNI
         st.markdown("#### 🇪🇸 Spain: DNI (Modulo 23)")
         es_dni = generate_spain_dni()
         st.code(es_dni, language="text")
-        if st.button("Use Spain DNI in MRZ", key="btn_es_dni", use_container_width=True):
-            set_to_mrz(es_dni, "ESP")
+        st.button(
+            "Use Spain DNI in MRZ",
+            key="btn_es_dni",
+            on_click=set_to_mrz,
+            args=(es_dni, "ESP"),
+            use_container_width=True,
+        )
 
-        # Netherlands BSN
         st.markdown("#### 🇳🇱 Netherlands: BSN (11-Proof Elfproef)")
         nl_bsn = generate_netherlands_bsn()
         st.code(nl_bsn, language="text")
-        if st.button("Use Netherlands BSN in MRZ", key="btn_nl_bsn", use_container_width=True):
-            set_to_mrz(nl_bsn, "NLD")
+        st.button(
+            "Use Netherlands BSN in MRZ",
+            key="btn_nl_bsn",
+            on_click=set_to_mrz,
+            args=(nl_bsn, "NLD"),
+            use_container_width=True,
+        )
 
-        # Sweden Personnummer
         st.markdown("#### 🇸🇪 Sweden: Personnummer (Luhn)")
         se_pin = generate_sweden_pin(date(1995, 8, 20))
         st.code(se_pin, language="text")
-        if st.button("Use Sweden PIN in MRZ", key="btn_se_pin", use_container_width=True):
-            set_to_mrz(se_pin, "SWE")
+        st.button(
+            "Use Sweden PIN in MRZ",
+            key="btn_se_pin",
+            on_click=set_to_mrz,
+            args=(se_pin, "SWE"),
+            use_container_width=True,
+        )
 
     with id_col2:
-        # Belgium National Register Number
         st.markdown("#### 🇧🇪 Belgium: National Number (Rijksregisternummer)")
         be_nat = generate_belgium_national_number(date(1992, 1, 19), is_female=True)
         st.code(be_nat, language="text")
-        if st.button("Use Belgium National No in MRZ", key="btn_be_nat", use_container_width=True):
-            set_to_mrz(be_nat, "BEL")
+        st.button(
+            "Use Belgium National No in MRZ",
+            key="btn_be_nat",
+            on_click=set_to_mrz,
+            args=(be_nat, "BEL"),
+            use_container_width=True,
+        )
 
-        # Poland PESEL
         st.markdown("#### 🇵🇱 Poland: PESEL (Modulo 10)")
         pl_pesel = generate_poland_pesel(date(1994, 5, 14), is_female=False)
         st.code(pl_pesel, language="text")
-        if st.button("Use Poland PESEL in MRZ", key="btn_pl_pesel", use_container_width=True):
-            set_to_mrz(pl_pesel, "POL")
+        st.button(
+            "Use Poland PESEL in MRZ",
+            key="btn_pl_pesel",
+            on_click=set_to_mrz,
+            args=(pl_pesel, "POL"),
+            use_container_width=True,
+        )
 
-        # Finland HETU
         st.markdown("#### 🇫🇮 Finland: HETU (Modulo 31)")
         fi_hetu = generate_finland_hetu(date(1990, 11, 23), is_female=True)
         st.code(fi_hetu, language="text")
-        if st.button("Use Finland HETU in MRZ", key="btn_fi_hetu", use_container_width=True):
-            set_to_mrz(fi_hetu, "FIN")
+        st.button(
+            "Use Finland HETU in MRZ",
+            key="btn_fi_hetu",
+            on_click=set_to_mrz,
+            args=(fi_hetu, "FIN"),
+            use_container_width=True,
+        )
 
-        # France NIR
         st.markdown("#### 🇫🇷 France: NIR / Social Security (Modulo 97)")
         fr_nir = generate_france_nir(date(1988, 3, 12), is_female=False)
         st.code(fr_nir, language="text")
-        if st.button("Use France NIR in MRZ", key="btn_fr_nir", use_container_width=True):
-            set_to_mrz(fr_nir, "FRA")
+        st.button(
+            "Use France NIR in MRZ",
+            key="btn_fr_nir",
+            on_click=set_to_mrz,
+            args=(fr_nir, "FRA"),
+            use_container_width=True,
+        )
 
-        # Brazil CPF
         st.markdown("#### 🇧🇷 Brazil: CPF (Dual Modulo 11)")
         br_cpf = generate_brazil_cpf()
         st.code(br_cpf, language="text")
-        if st.button("Use Brazil CPF in MRZ", key="btn_br_cpf", use_container_width=True):
-            set_to_mrz(br_cpf, "BRA")
+        st.button(
+            "Use Brazil CPF in MRZ",
+            key="btn_br_cpf",
+            on_click=set_to_mrz,
+            args=(br_cpf, "BRA"),
+            use_container_width=True,
+    )
