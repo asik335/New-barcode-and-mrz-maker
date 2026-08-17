@@ -80,8 +80,185 @@ STATE_IIN_MAP = {
 # =============================================================================
 # ALGORITHMIC IDENTIFIER GENERATORS
 # =============================================================================
+def generate_bangladesh_nid(dob: date, is_smart_card: bool = False) -> str:
+    """Bangladesh NID Generator: 10-digit Smart Card or 17-digit Legacy format."""
+    if is_smart_card:
+        return str(random.randint(1000000000, 9999999999))
+    birth_year = dob.strftime("%Y")
+    district_code = f"{random.randint(1, 64):02d}"
+    rmo_code = str(random.randint(1, 9))
+    seq_num = f"{random.randint(10000000, 99999999)}"
+    return f"{birth_year}{district_code}{rmo_code}{seq_num}"
+
+
+def generate_india_aadhaar() -> str:
+    """Indian Aadhaar (12 digits, Verhoeff Checksum Algorithm)."""
+    d = [
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+        [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+        [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+        [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+        [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+        [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+        [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+        [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+        [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+    ]
+    p = [
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+        [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+        [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+        [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+        [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+        [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+        [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+    ]
+    inv = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9]
+
+    # Generate 11 random digits (First digit 2-9 per UIDAI standard)
+    num = [random.randint(2, 9)] + [random.randint(0, 9) for _ in range(10)]
+    c = 0
+    for i, item in enumerate(reversed(num)):
+        c = d[c][p[(i + 1) % 8][item]]
+    check_digit = inv[c]
+    full_aadhaar = "".join(map(str, num)) + str(check_digit)
+    return f"{full_aadhaar[:4]} {full_aadhaar[4:8]} {full_aadhaar[8:]}"
+
+
+def generate_turkey_tckn() -> str:
+    """Turkish T.C. Kimlik No (11 digits, Dual Checksum)."""
+    digits = [random.randint(1, 9)] + [random.randint(0, 9) for _ in range(8)]
+    sum_odd = digits[0] + digits[2] + digits[4] + digits[6] + digits[8]
+    sum_even = digits[1] + digits[3] + digits[5] + digits[7]
+    d10 = ((sum_odd * 7) - sum_even) % 10
+    digits.append(d10)
+    d11 = (sum(digits)) % 10
+    digits.append(d11)
+    return "".join(map(str, digits))
+
+
+def generate_italy_codice_fiscale(
+    first_name: str = "MARIO", last_name: str = "ROSSI", dob: date = date(1990, 5, 14), is_female: bool = False
+) -> str:
+    """Italian Codice Fiscale (16 characters)."""
+    def extract_cons_vow(s):
+        cons = "".join([c for c in s.upper() if c.isalpha() and c not in "AEIOU"])
+        vows = "".join([c for c in s.upper() if c in "AEIOU"])
+        return cons, vows
+
+    # Surname
+    s_c, s_v = extract_cons_vow(last_name)
+    s_code = (s_c + s_v + "XXX")[:3]
+
+    # Name
+    n_c, n_v = extract_cons_vow(first_name)
+    if len(n_c) >= 4:
+        n_code = n_c[0] + n_c[2] + n_c[3]
+    else:
+        n_code = (n_c + n_v + "XXX")[:3]
+
+    # Date / Sex
+    y_code = f"{dob.year % 100:02d}"
+    month_chars = ["A", "B", "C", "D", "E", "H", "L", "M", "P", "R", "S", "T"]
+    m_code = month_chars[dob.month - 1]
+    d_code = f"{dob.day + (40 if is_female else 0):02d}"
+
+    # Place Code (Belfiore code for Rome: H501)
+    belfiore = "H501"
+    base = f"{s_code}{n_code}{y_code}{m_code}{d_code}{belfiore}"
+
+    # Control Character
+    odd_map = {
+        "0": 1, "1": 0, "2": 5, "3": 7, "4": 9, "5": 13, "6": 15, "7": 17, "8": 19, "9": 21,
+        "A": 1, "B": 0, "C": 5, "D": 7, "E": 9, "F": 13, "G": 15, "H": 17, "I": 19, "J": 21,
+        "K": 2, "L": 4, "M": 18, "N": 20, "O": 11, "P": 3, "Q": 6, "R": 8, "S": 12, "T": 14,
+        "U": 16, "V": 10, "W": 22, "X": 25, "Y": 24, "Z": 23,
+    }
+    tot = sum(odd_map[c] if i % 2 == 0 else (ord(c) - 48 if c.isdigit() else ord(c) - 65) for i, c in enumerate(base))
+    chk = chr(65 + (tot % 26))
+    return f"{base}{chk}"
+
+
+def generate_norway_fnr(dob: date, is_female: bool = False) -> str:
+    """Norwegian Fødselsnummer (11 digits, dual Modulo 11)."""
+    d_str = dob.strftime("%d%m%y")
+    while True:
+        seq = random.randint(100, 499)
+        if (seq % 2 == 0) != is_female:
+            continue
+        digits = [int(c) for c in f"{d_str}{seq:03d}"]
+        w1 = [3, 7, 6, 1, 8, 9, 4, 5, 2]
+        k1 = 11 - (sum(d * w for d, w in zip(digits, w1)) % 11)
+        if k1 == 11:
+            k1 = 0
+        if k1 == 10:
+            continue
+
+        digits_k1 = digits + [k1]
+        w2 = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+        k2 = 11 - (sum(d * w for d, w in zip(digits_k1, w2)) % 11)
+        if k2 == 11:
+            k2 = 0
+        if k2 == 10:
+            continue
+        return f"{d_str}{seq:03d}{k1}{k2}"
+
+
+def generate_china_ric(dob: date, is_female: bool = False) -> str:
+    """China Resident Identity Card (18 digits, ISO 7064 MOD 11-2)."""
+    area = str(random.choice([110101, 310101, 440103, 510104]))
+    dob_str = dob.strftime("%Y%m%d")
+    seq = random.randint(10, 99)
+    gender_digit = random.choice([0, 2, 4, 6, 8]) if is_female else random.choice([1, 3, 5, 7, 9])
+    base = f"{area}{dob_str}{seq}{gender_digit}"
+    weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]
+    check_map = ["1", "0", "X", "9", "8", "7", "6", "5", "4", "3", "2"]
+    total = sum(int(base[i]) * weights[i] for i in range(17))
+    return f"{base}{check_map[total % 11]}"
+
+
+def generate_universal_passport(country_code: str = "USA") -> str:
+    """Generates standard ICAO Doc 9303 compliant Passport Numbers."""
+    c = country_code.upper()
+    if c == "BGD":
+        return random.choice(["A", "E", "B"]) + "".join(random.choices(string.digits, k=8))
+    elif c in ("GBR", "IND"):
+        return "".join(random.choices(string.ascii_uppercase, k=1)) + "".join(random.choices(string.digits, k=7))
+    elif c == "DEU":
+        chars = "CFGHJKLMNPRTVWXYZ0123456789"
+        return "".join(random.choices(chars, k=9))
+    elif c == "USA":
+        return random.choice(string.digits + string.ascii_uppercase) + "".join(random.choices(string.digits, k=8))
+    return "".join(random.choices(string.ascii_uppercase, k=1)) + "".join(random.choices(string.digits, k=8))
+
+
+def generate_uk_nino() -> str:
+    invalid_prefixes = ["BG", "GB", "KN", "NK", "NT", "TN", "ZZ"]
+    valid_first = [c for c in string.ascii_uppercase if c not in "DFIQUV"]
+    valid_second = [c for c in string.ascii_uppercase if c not in "DFIOQUV"]
+    while True:
+        p1 = random.choice(valid_first)
+        p2 = random.choice(valid_second)
+        prefix = p1 + p2
+        if prefix not in invalid_prefixes:
+            break
+    digits = f"{random.randint(100000, 999999):06d}"
+    suffix = random.choice(["A", "B", "C", "D"])
+    return f"{prefix} {digits[:2]} {digits[2:4]} {digits[4:]} {suffix}"
+
+
+def generate_german_id() -> str:
+    allowed = "CFGHJKLMNPRTVWXYZ0123456789"
+    base = "".join(random.choices(allowed, k=9))
+    weights = [7, 3, 1]
+    total = sum(get_icao_char_value(c) * weights[i % 3] for i, c in enumerate(base))
+    chk = str(total % 10)
+    return f"{base}{chk}"
+
+
 def generate_belgium_card_number() -> str:
-    """Belgian ID Card Number (12 digits, Modulo-97)."""
     base = random.randint(1000000000, 9999999999)
     rem = base % 97
     chk = 97 if rem == 0 else rem
@@ -90,27 +267,20 @@ def generate_belgium_card_number() -> str:
 
 
 def generate_belgium_national_number(dob: date, is_female: bool = False) -> str:
-    """Belgian National Register Number (Rijksregisternummer) (YY.MM.DD-XXX.CC)."""
-    y_str = dob.strftime("%y")
-    m_str = dob.strftime("%m")
-    d_str = dob.strftime("%d")
-
+    y_str, m_str, d_str = dob.strftime("%y"), dob.strftime("%m"), dob.strftime("%d")
     seq = random.randint(1, 499) * 2
     if not is_female:
         seq -= 1
     seq_str = f"{seq:03d}"
-
     base_num = int(f"{y_str}{m_str}{d_str}{seq_str}")
     if dob.year >= 2000:
         chk = 97 - (int(f"2{y_str}{m_str}{d_str}{seq_str}") % 97)
     else:
         chk = 97 - (base_num % 97)
-
     return f"{y_str}.{m_str}.{d_str}-{seq_str}.{chk:02d}"
 
 
 def generate_croatia_oib() -> str:
-    """Croatian OIB (11 digits, ISO 7064 MOD 11, 10)."""
     digits = [random.randint(0, 9) for _ in range(10)]
     remainder = 10
     for d in digits:
@@ -126,14 +296,12 @@ def generate_croatia_oib() -> str:
 
 
 def generate_spain_dni() -> str:
-    """Spanish DNI (8 digits + Modulo-23 letter)."""
     num = random.randint(10000000, 99999999)
     letters = "TRWAGMYFPDXBNJZSQVHLCKE"
     return f"{num}{letters[num % 23]}"
 
 
 def generate_netherlands_bsn() -> str:
-    """Dutch BSN (9 digits, 11-proof / elfproef)."""
     while True:
         d = [random.randint(0, 9) for _ in range(8)]
         total = sum(d[i] * (9 - i) for i in range(8))
@@ -143,7 +311,6 @@ def generate_netherlands_bsn() -> str:
 
 
 def generate_poland_pesel(dob: date, is_female: bool = False) -> str:
-    """Polish PESEL (11 digits with century month encoding and mod 10 weights)."""
     year, month, day = dob.year, dob.month, dob.day
     if 1800 <= year <= 1899:
         month += 80
@@ -154,14 +321,10 @@ def generate_poland_pesel(dob: date, is_female: bool = False) -> str:
     elif 2200 <= year <= 2299:
         month += 60
 
-    y_str = f"{year % 100:02d}"
-    m_str = f"{month:02d}"
-    d_str = f"{day:02d}"
-
+    y_str, m_str, d_str = f"{year % 100:02d}", f"{month:02d}", f"{day:02d}"
     seq = random.randint(0, 999)
     gender_digit = random.choice([0, 2, 4, 6, 8]) if is_female else random.choice([1, 3, 5, 7, 9])
     base = f"{y_str}{m_str}{d_str}{seq:03d}{gender_digit}"
-
     weights = [1, 3, 7, 9, 1, 3, 7, 9, 1, 3]
     s = sum(int(base[i]) * weights[i] for i in range(10))
     chk = (10 - (s % 10)) % 10
@@ -169,11 +332,9 @@ def generate_poland_pesel(dob: date, is_female: bool = False) -> str:
 
 
 def generate_sweden_pin(dob: date) -> str:
-    """Swedish Personnummer (10 digits, Luhn check)."""
     date_part = dob.strftime("%y%m%d")
     seq = f"{random.randint(0, 999):03d}"
     base = date_part + seq
-
     total = 0
     for i, char in enumerate(base):
         n = int(char) * (2 if i % 2 == 0 else 1)
@@ -183,35 +344,29 @@ def generate_sweden_pin(dob: date) -> str:
 
 
 def generate_finland_hetu(dob: date, is_female: bool = False) -> str:
-    """Finnish HETU (DDMMYY[+-A]NNNC, Modulo-31)."""
     d_str = dob.strftime("%d%m%y")
     century_char = "+" if dob.year < 1900 else ("-" if dob.year < 2000 else "A")
     seq = random.randint(1, 449) * 2
     if not is_female:
         seq += 1
     seq_str = f"{seq:03d}"
-
     check_chars = "0123456789ABCDEFHJKLMNPRSTUVWXY"
     rem = int(f"{d_str}{seq_str}") % 31
     return f"{d_str}{century_char}{seq_str}{check_chars[rem]}"
 
 
 def generate_france_nir(dob: date, is_female: bool = False) -> str:
-    """French NIR / Social Security Number (13 digits + 2-digit key Modulo-97)."""
     gender = "2" if is_female else "1"
-    y_str = dob.strftime("%y")
-    m_str = dob.strftime("%m")
+    y_str, m_str = dob.strftime("%y"), dob.strftime("%m")
     dept = f"{random.randint(1, 95):02d}"
     commune = f"{random.randint(1, 999):03d}"
     order = f"{random.randint(1, 999):03d}"
-
     base_str = f"{gender}{y_str}{m_str}{dept}{commune}{order}"
     key = 97 - (int(base_str) % 97)
     return f"{base_str} {key:02d}"
 
 
 def generate_brazil_cpf() -> str:
-    """Brazilian CPF (11 digits, Dual Modulo-11)."""
     d = [random.randint(0, 9) for _ in range(9)]
     v1 = sum(d[i] * (10 - i) for i in range(9)) % 11
     d.append(0 if v1 < 2 else 11 - v1)
@@ -222,7 +377,72 @@ def generate_brazil_cpf() -> str:
 
 
 # =============================================================================
-# ICAO 9303 TD1 / TD2 / TD3 MRZ LOGIC
+# US STATE DL NUMBER GENERATOR
+# =============================================================================
+def generate_us_driver_license_number(state_code: str, last_name: str = "DOE") -> str:
+    st_code = state_code.upper()
+    ln = re.sub(r"[^A-Z]", "", last_name.upper()) or "DOE"
+    initial = ln[0]
+
+    patterns = {
+        "AL": lambda: f"{random.randint(1000000, 9999999):07d}",
+        "AK": lambda: f"{random.randint(1000000, 9999999):07d}",
+        "AZ": lambda: f"{random.choice(string.ascii_uppercase)}{random.randint(10000000, 99999999):08d}",
+        "AR": lambda: f"9{random.randint(10000000, 99999999):08d}",
+        "CA": lambda: f"{initial}{random.randint(1000000, 9999999):07d}",
+        "CO": lambda: f"{random.randint(100000000, 999999999):09d}",
+        "CT": lambda: f"{random.randint(100000000, 999999999):09d}",
+        "DE": lambda: f"{random.randint(1000000, 9999999):07d}",
+        "DC": lambda: f"{random.randint(1000000, 9999999):07d}",
+        "FL": lambda: f"{initial}{random.randint(100, 999):03d}-{random.randint(100, 999):03d}-{random.randint(10, 99):02d}-{random.randint(100, 999):03d}-0",
+        "GA": lambda: f"{random.randint(100000000, 999999999):09d}",
+        "HI": lambda: f"H{random.randint(10000000, 99999999):08d}",
+        "ID": lambda: f"{random.choice(string.ascii_uppercase)}{random.choice(string.ascii_uppercase)}{random.randint(100000, 999999):06d}{random.choice(string.ascii_uppercase)}",
+        "IL": lambda: f"{initial}{random.randint(1000, 9999):04d}-{random.randint(1000, 9999):04d}-{random.randint(1000, 9999):04d}",
+        "IN": lambda: f"{random.randint(1000, 9999):04d}-{random.randint(10, 99):02d}-{random.randint(1000, 9999):04d}",
+        "IA": lambda: f"{random.randint(100, 999):03d}{random.choice(string.ascii_uppercase)}{random.choice(string.ascii_uppercase)}{random.randint(1000, 9999):04d}",
+        "KS": lambda: f"K{random.randint(10000000, 99999999):08d}",
+        "KY": lambda: f"{initial}{random.randint(10, 99):02d}-{random.randint(100, 999):03d}-{random.randint(100, 999):03d}",
+        "LA": lambda: f"00{random.randint(1000000, 9999999):07d}",
+        "ME": lambda: f"{random.randint(1000000, 9999999):07d}",
+        "MD": lambda: f"{initial}-{random.randint(100, 999):03d}-{random.randint(100, 999):03d}-{random.randint(100, 999):03d}",
+        "MA": lambda: f"S{random.randint(10000000, 99999999):08d}",
+        "MI": lambda: f"{initial} {random.randint(100, 999):03d} {random.randint(100, 999):03d} {random.randint(100, 999):03d}",
+        "MN": lambda: f"{initial}{random.randint(100000000000, 999999999999):012d}",
+        "MS": lambda: f"{random.randint(100000000, 999999999):09d}",
+        "MO": lambda: f"{initial}{random.randint(100000000, 999999999):09d}",
+        "MT": lambda: f"{random.randint(100000000, 999999999):09d}",
+        "NE": lambda: f"{random.choice(string.ascii_uppercase)}{random.randint(10000000, 99999999):08d}",
+        "NV": lambda: f"{random.randint(1000000000, 9999999999):010d}",
+        "NH": lambda: f"{random.randint(10, 99):02d}{random.choice(string.ascii_uppercase)}{random.choice(string.ascii_uppercase)}{random.choice(string.ascii_uppercase)}{random.randint(10000, 99999):05d}",
+        "NJ": lambda: f"{initial}{random.randint(1000, 9999):04d} {random.randint(10000, 99999):05d} {random.randint(10000, 99999):05d}",
+        "NM": lambda: f"{random.randint(100000000, 999999999):09d}",
+        "NY": lambda: f"{random.randint(100000000, 999999999):09d}",
+        "NC": lambda: f"{random.randint(100000000000, 999999999999):012d}",
+        "ND": lambda: f"{random.choice(string.ascii_uppercase)}{random.choice(string.ascii_uppercase)}{random.choice(string.ascii_uppercase)}{random.randint(100000, 999999):06d}",
+        "OH": lambda: f"{random.choice(string.ascii_uppercase)}{random.choice(string.ascii_uppercase)}{random.randint(100000, 999999):06d}",
+        "OK": lambda: f"{random.choice(string.ascii_uppercase)}{random.randint(100000000, 999999999):09d}",
+        "OR": lambda: f"{random.randint(1000000, 9999999):07d}",
+        "PA": lambda: f"{random.randint(10000000, 99999999):08d}",
+        "RI": lambda: f"{random.randint(1000000, 9999999):07d}",
+        "SC": lambda: f"{random.randint(100000000, 999999999):09d}",
+        "SD": lambda: f"{random.randint(10000000, 99999999):08d}",
+        "TN": lambda: f"{random.randint(10000000, 99999999):08d}",
+        "TX": lambda: f"{random.randint(10000000, 99999999):08d}",
+        "UT": lambda: f"{random.randint(10000000, 99999999):08d}",
+        "VT": lambda: f"{random.randint(10000000, 99999999):08d}",
+        "VA": lambda: f"{random.choice(string.ascii_uppercase)}{random.randint(10000000, 99999999):08d}",
+        "WA": lambda: f"WDL{random.choice(string.ascii_uppercase)}{random.choice(string.ascii_uppercase)}{random.randint(1000000, 9999999):07d}",
+        "WV": lambda: f"{random.randint(1000000, 9999999):07d}",
+        "WI": lambda: f"{initial}{random.randint(1000, 9999):04d}-{random.randint(1000, 9999):04d}-{random.randint(1000, 9999):04d}-{random.randint(10, 99):02d}",
+        "WY": lambda: f"{random.randint(100000000, 999999999):09d}",
+    }
+    generator = patterns.get(st_code, lambda: f"{random.randint(10000000, 99999999):08d}")
+    return generator()
+
+
+# =============================================================================
+# ICAO 9303 MRZ LOGIC
 # =============================================================================
 def get_icao_char_value(c: str) -> int:
     if c.isdigit():
@@ -255,7 +475,6 @@ def build_td1_mrz_with_overflow(
     optional_data1: str = "",
     optional_data2: str = "",
 ) -> str:
-    """Builds a strict ICAO Doc 9303 TD1 MRZ with >9 digit document overflow handling."""
     dtype = sanitize_mrz(doc_type).ljust(2, "<")[:2]
     c_code = sanitize_mrz(country).ljust(3, "<")[:3]
     raw_num = sanitize_mrz(doc_num.replace("-", "").replace(".", "").replace(" ", ""))
@@ -277,7 +496,6 @@ def build_td1_mrz_with_overflow(
         opt_field1 = sanitize_mrz(optional_data1).ljust(15, "<")[:15]
 
     line1 = f"{dtype}{c_code}{doc_part1}{doc_check}{opt_field1}"
-
     dob_check = calculate_icao_check_digit(dob_san)
     expiry_check = calculate_icao_check_digit(exp_san)
     opt_field2 = sanitize_mrz(optional_data2).ljust(11, "<")[:11]
@@ -286,7 +504,6 @@ def build_td1_mrz_with_overflow(
     composite_check = calculate_icao_check_digit(composite_payload)
 
     line2 = f"{dob_san}{dob_check}{sex_san}{exp_san}{expiry_check}{nat_code}{opt_field2}{composite_check}"
-
     name_payload = f"{sanitize_mrz(surname)}<<{sanitize_mrz(given_names)}".replace(" ", "<")
     line3 = name_payload.ljust(30, "<")[:30]
 
@@ -388,10 +605,9 @@ def corrupt_raw_string(raw: str, choice: str) -> str:
 # =============================================================================
 # STREAMLIT UI SETUP
 # =============================================================================
-st.set_page_config(page_title="Document Tools & MRZ Suite", page_icon="🪪", layout="centered")
+st.set_page_config(page_title="Document Tools & Verification Suite", page_icon="🪪", layout="centered")
 st.title("🪪 Document Tools & Verification Suite")
 
-# Initialize session state defaults
 defaults_dict = {
     "mrz_sur": "DAVIS",
     "mrz_given": "RACHEL",
@@ -404,6 +620,7 @@ defaults_dict = {
     "mrz_sex": "F",
     "status_msg": "",
     "bc_expiry": "01012033",
+    "bc_license_num": "D12345678",
 }
 for k, v in defaults_dict.items():
     if k not in st.session_state:
@@ -411,7 +628,6 @@ for k, v in defaults_dict.items():
 
 
 def set_to_mrz(doc_val: str, country_code: str):
-    """Callback function that safely updates session state before rendering."""
     cleaned = doc_val.replace("-", "").replace(".", "").replace(" ", "").strip()
     st.session_state["mrz_num"] = cleaned
     st.session_state["mrz_country"] = country_code
@@ -419,10 +635,17 @@ def set_to_mrz(doc_val: str, country_code: str):
     st.session_state["status_msg"] = f"Transferred '{cleaned}' ({country_code}) to MRZ tab!"
 
 
-tab_barcode, tab_mrz, tab_national_ids = st.tabs([
+def set_to_barcode_dl(dl_num: str):
+    cleaned = dl_num.replace("-", "").replace(" ", "").strip()
+    st.session_state["bc_license_num"] = cleaned
+    st.session_state["status_msg"] = f"Transferred '{cleaned}' to Barcode Generator tab!"
+
+
+tab_barcode, tab_mrz, tab_national_ids, tab_us_dl = st.tabs([
     "📊 PDF417 Barcode Generator",
-    "🔤 Advanced MRZ Generator (9+ Overflow)",
-    "🌍 National ID & Number Generators",
+    "🔤 Advanced MRZ Generator",
+    "🌍 National ID & Passport Generators",
+    "🇺🇸 US Driver License Number Generator",
 ])
 
 
@@ -459,7 +682,7 @@ with tab_barcode:
 
     with col2:
         st.subheader("Document & Address Info")
-        license_num = st.text_input("License Number (DAQ)", "D12345678")
+        license_num = st.text_input("License Number (DAQ)", key="bc_license_num")
         doc_disc = st.text_input("Document Discriminator (DCF)", "123456789")
         dda = st.text_input("Compliance Type (DDA)", "F")
         street = st.text_input("Street (DAG)", "123 MAIN ST")
@@ -570,7 +793,7 @@ with tab_barcode:
 
 
 # =============================================================================
-# TAB 2: ADVANCED MRZ GENERATOR (ICAO 9303 + 9+ DIGIT OVERFLOW)
+# TAB 2: ADVANCED MRZ GENERATOR
 # =============================================================================
 with tab_mrz:
     st.subheader("ICAO Doc 9303 Machine Readable Zone (MRZ)")
@@ -580,9 +803,9 @@ with tab_mrz:
         st.session_state["status_msg"] = ""
 
     def generate_random_mrz_data():
-        surnames = ["SMITH", "JOHNSON", "WILLIAMS", "BROWN", "JONES", "GARCIA", "MILLER", "DAVIS"]
-        given_names = ["JAMES", "MARY", "ROBERT", "PATRICIA", "JOHN", "JENNIFER", "MICHAEL", "LINDA"]
-        countries = ["USA", "CAN", "GBR", "DEU", "FRA", "AUS", "BEL", "HRV", "ESP"]
+        surnames = ["SMITH", "RAHMAN", "JOHNSON", "AHMED", "MÜLLER", "GARCIA", "MILLER", "DAVIS", "ROSSI", "YILMAZ"]
+        given_names = ["JAMES", "MOHAMMAD", "ROBERT", "FATIMA", "HANS", "JENNIFER", "MICHAEL", "LINDA", "MARIO", "EMRE"]
+        countries = ["USA", "BGD", "GBR", "DEU", "FRA", "AUS", "BEL", "HRV", "ESP", "IND", "TUR", "ITA", "NOR", "CHN"]
 
         doc_num = "".join(random.choices(string.ascii_uppercase + string.digits, k=12))
         dob_dt = datetime.now() - timedelta(days=random.randint(20 * 365, 60 * 365))
@@ -721,122 +944,168 @@ with tab_mrz:
 
 
 # =============================================================================
-# TAB 3: NATIONAL ID & DOCUMENT NUMBER GENERATORS
+# TAB 3: NATIONAL ID & PASSPORT GENERATORS
 # =============================================================================
 with tab_national_ids:
-    st.subheader("Algorithmic National ID & Identifier Generators")
-    st.caption("Generates mathematically verified national IDs using official checksum algorithms.")
+    st.subheader("🌍 Algorithmic National ID & Passport Generators")
+    st.caption("Generates mathematically verified national IDs using official checksum algorithms and standard structure rules.")
 
+    st.markdown("### 🛂 Universal Passport Generator")
+    p_col1, p_col2 = st.columns(2)
+    with p_col1:
+        pass_country = st.selectbox("Select Passport Country", ["USA", "BGD", "GBR", "DEU", "IND", "Other (ICAO 9-char)"])
+    with p_col2:
+        pass_code = "USA" if "USA" in pass_country else ("BGD" if "BGD" in pass_country else ("GBR" if "GBR" in pass_country else ("DEU" if "DEU" in pass_country else ("IND" if "IND" in pass_country else "XXX"))))
+        passport_num = generate_universal_passport(pass_code)
+        st.text_input("Generated Passport Number", value=passport_num, disabled=True)
+        st.button(
+            "Use Passport in MRZ Tab",
+            key="btn_pass_mrz",
+            on_click=set_to_mrz,
+            args=(passport_num, pass_code),
+            use_container_width=True,
+        )
+
+    st.divider()
     id_col1, id_col2 = st.columns(2)
 
     with id_col1:
+        st.markdown("#### 🇮🇳 India: Aadhaar (Verhoeff Algorithm)")
+        in_aadhaar = generate_india_aadhaar()
+        st.code(in_aadhaar, language="text")
+        st.button("Use India Aadhaar in MRZ", key="btn_in_aadhaar", on_click=set_to_mrz, args=(in_aadhaar, "IND"), use_container_width=True)
+
+        st.markdown("#### 🇹🇷 Turkey: T.C. Kimlik No (Dual Checksum)")
+        tr_tckn = generate_turkey_tckn()
+        st.code(tr_tckn, language="text")
+        st.button("Use Turkey TCKN in MRZ", key="btn_tr_tckn", on_click=set_to_mrz, args=(tr_tckn, "TUR"), use_container_width=True)
+
+        st.markdown("#### 🇮🇹 Italy: Codice Fiscale (Modulo 26)")
+        it_cf = generate_italy_codice_fiscale("MARIO", "ROSSI", date(1990, 5, 14), is_female=False)
+        st.code(it_cf, language="text")
+        st.button("Use Italy CF in MRZ", key="btn_it_cf", on_click=set_to_mrz, args=(it_cf, "ITA"), use_container_width=True)
+
+        st.markdown("#### 🇧🇩 Bangladesh: NID (Smart & Legacy)")
+        bd_smart = generate_bangladesh_nid(date(1995, 6, 15), is_smart_card=True)
+        st.text(f"Smart NID (10 Digits): {bd_smart}")
+        st.button("Use BD Smart NID in MRZ", key="btn_bd_smart", on_click=set_to_mrz, args=(bd_smart, "BGD"), use_container_width=True)
+        bd_legacy = generate_bangladesh_nid(date(1995, 6, 15), is_smart_card=False)
+        st.text(f"Legacy NID (17 Digits): {bd_legacy}")
+        st.button("Use BD Legacy NID in MRZ", key="btn_bd_leg", on_click=set_to_mrz, args=(bd_legacy, "BGD"), use_container_width=True)
+
+        st.markdown("#### 🇬🇧 UK: National Insurance Number (NINO)")
+        uk_nino = generate_uk_nino()
+        st.code(uk_nino, language="text")
+        st.button("Use UK NINO in MRZ", key="btn_uk_nino", on_click=set_to_mrz, args=(uk_nino, "GBR"), use_container_width=True)
+
+        st.markdown("#### 🇩🇪 Germany: Personalausweis (ICAO Check)")
+        de_id = generate_german_id()
+        st.code(de_id, language="text")
+        st.button("Use Germany ID in MRZ", key="btn_de_id", on_click=set_to_mrz, args=(de_id, "DEU"), use_container_width=True)
+
         st.markdown("#### 🇧🇪 Belgium: ID Card Number")
         be_card = generate_belgium_card_number()
         st.code(be_card, language="text")
-        st.button(
-            "Use Belgium Card in MRZ",
-            key="btn_be_card",
-            on_click=set_to_mrz,
-            args=(be_card, "BEL"),
-            use_container_width=True,
-        )
+        st.button("Use Belgium Card in MRZ", key="btn_be_card", on_click=set_to_mrz, args=(be_card, "BEL"), use_container_width=True)
 
-        st.markdown("#### 🇭🇷 Croatia: OIB (ISO 7064 MOD 11, 10)")
-        hr_oib = generate_croatia_oib()
-        st.code(hr_oib, language="text")
-        st.button(
-            "Use Croatia OIB in MRZ",
-            key="btn_hr_oib",
-            on_click=set_to_mrz,
-            args=(hr_oib, "HRV"),
-            use_container_width=True,
-        )
+    with id_col2:
+        st.markdown("#### 🇨🇳 China: Resident ID / RIC (ISO 7064 MOD 11-2)")
+        cn_ric = generate_china_ric(date(1996, 4, 18), is_female=False)
+        st.code(cn_ric, language="text")
+        st.button("Use China RIC in MRZ", key="btn_cn_ric", on_click=set_to_mrz, args=(cn_ric, "CHN"), use_container_width=True)
 
-        st.markdown("#### 🇪🇸 Spain: DNI (Modulo 23)")
-        es_dni = generate_spain_dni()
-        st.code(es_dni, language="text")
-        st.button(
-            "Use Spain DNI in MRZ",
-            key="btn_es_dni",
-            on_click=set_to_mrz,
-            args=(es_dni, "ESP"),
-            use_container_width=True,
-        )
+        st.markdown("#### 🇳🇴 Norway: Fødselsnummer (Dual Modulo 11)")
+        no_fnr = generate_norway_fnr(date(1991, 10, 25), is_female=True)
+        st.code(no_fnr, language="text")
+        st.button("Use Norway FNR in MRZ", key="btn_no_fnr", on_click=set_to_mrz, args=(no_fnr, "NOR"), use_container_width=True)
 
         st.markdown("#### 🇳🇱 Netherlands: BSN (11-Proof Elfproef)")
         nl_bsn = generate_netherlands_bsn()
         st.code(nl_bsn, language="text")
-        st.button(
-            "Use Netherlands BSN in MRZ",
-            key="btn_nl_bsn",
-            on_click=set_to_mrz,
-            args=(nl_bsn, "NLD"),
-            use_container_width=True,
-        )
+        st.button("Use Netherlands BSN in MRZ", key="btn_nl_bsn", on_click=set_to_mrz, args=(nl_bsn, "NLD"), use_container_width=True)
 
         st.markdown("#### 🇸🇪 Sweden: Personnummer (Luhn)")
         se_pin = generate_sweden_pin(date(1995, 8, 20))
         st.code(se_pin, language="text")
-        st.button(
-            "Use Sweden PIN in MRZ",
-            key="btn_se_pin",
-            on_click=set_to_mrz,
-            args=(se_pin, "SWE"),
-            use_container_width=True,
-        )
+        st.button("Use Sweden PIN in MRZ", key="btn_se_pin", on_click=set_to_mrz, args=(se_pin, "SWE"), use_container_width=True)
 
-    with id_col2:
-        st.markdown("#### 🇧🇪 Belgium: National Number (Rijksregisternummer)")
-        be_nat = generate_belgium_national_number(date(1992, 1, 19), is_female=True)
-        st.code(be_nat, language="text")
-        st.button(
-            "Use Belgium National No in MRZ",
-            key="btn_be_nat",
-            on_click=set_to_mrz,
-            args=(be_nat, "BEL"),
-            use_container_width=True,
-        )
+        st.markdown("#### 🇭🇷 Croatia: OIB (ISO 7064 MOD 11, 10)")
+        hr_oib = generate_croatia_oib()
+        st.code(hr_oib, language="text")
+        st.button("Use Croatia OIB in MRZ", key="btn_hr_oib", on_click=set_to_mrz, args=(hr_oib, "HRV"), use_container_width=True)
+
+        st.markdown("#### 🇪🇸 Spain: DNI (Modulo 23)")
+        es_dni = generate_spain_dni()
+        st.code(es_dni, language="text")
+        st.button("Use Spain DNI in MRZ", key="btn_es_dni", on_click=set_to_mrz, args=(es_dni, "ESP"), use_container_width=True)
 
         st.markdown("#### 🇵🇱 Poland: PESEL (Modulo 10)")
         pl_pesel = generate_poland_pesel(date(1994, 5, 14), is_female=False)
         st.code(pl_pesel, language="text")
-        st.button(
-            "Use Poland PESEL in MRZ",
-            key="btn_pl_pesel",
-            on_click=set_to_mrz,
-            args=(pl_pesel, "POL"),
-            use_container_width=True,
-        )
+        st.button("Use Poland PESEL in MRZ", key="btn_pl_pesel", on_click=set_to_mrz, args=(pl_pesel, "POL"), use_container_width=True)
 
         st.markdown("#### 🇫🇮 Finland: HETU (Modulo 31)")
         fi_hetu = generate_finland_hetu(date(1990, 11, 23), is_female=True)
         st.code(fi_hetu, language="text")
-        st.button(
-            "Use Finland HETU in MRZ",
-            key="btn_fi_hetu",
-            on_click=set_to_mrz,
-            args=(fi_hetu, "FIN"),
-            use_container_width=True,
-        )
+        st.button("Use Finland HETU in MRZ", key="btn_fi_hetu", on_click=set_to_mrz, args=(fi_hetu, "FIN"), use_container_width=True)
 
         st.markdown("#### 🇫🇷 France: NIR / Social Security (Modulo 97)")
         fr_nir = generate_france_nir(date(1988, 3, 12), is_female=False)
         st.code(fr_nir, language="text")
-        st.button(
-            "Use France NIR in MRZ",
-            key="btn_fr_nir",
-            on_click=set_to_mrz,
-            args=(fr_nir, "FRA"),
-            use_container_width=True,
-        )
+        st.button("Use France NIR in MRZ", key="btn_fr_nir", on_click=set_to_mrz, args=(fr_nir, "FRA"), use_container_width=True)
 
         st.markdown("#### 🇧🇷 Brazil: CPF (Dual Modulo 11)")
         br_cpf = generate_brazil_cpf()
         st.code(br_cpf, language="text")
-        st.button(
-            "Use Brazil CPF in MRZ",
-            key="btn_br_cpf",
-            on_click=set_to_mrz,
-            args=(br_cpf, "BRA"),
-            use_container_width=True,
-    )
+        st.button("Use Brazil CPF in MRZ", key="btn_br_cpf", on_click=set_to_mrz, args=(br_cpf, "BRA"), use_container_width=True)
+
+
+# =============================================================================
+# TAB 4: US DRIVER LICENSE NUMBER GENERATOR (STATE-BY-STATE & BATCH)
+# =============================================================================
+with tab_us_dl:
+    st.subheader("🇺🇸 US Driver's License Number Generator")
+    st.caption("Generates valid-format driver's license numbers modeled after official state formatting rules.")
+
+    dl_last_name = st.text_input("Surname / Last Name (for states encoding initial)", "DOE")
+    state_options = ["All States (Batch Generate)"] + [k for k in STATE_IIN_MAP.keys() if not k.startswith("Custom")]
+
+    pickup_selection = st.selectbox("Select State or Pickup Option", state_options)
+
+    if st.button("Generate Driver's License Number(s)", type="primary", use_container_width=True):
+        if pickup_selection == "All States (Batch Generate)":
+            results = []
+            for st_full, (_, code) in STATE_IIN_MAP.items():
+                if code == "XX":
+                    continue
+                num = generate_us_driver_license_number(code, dl_last_name)
+                results.append((st_full, code, num))
+
+            st.write(f"### Generated DL Numbers for all {len(results)} States:")
+            grid_cols = st.columns(2)
+            for idx, (st_name, st_code, st_dl) in enumerate(results):
+                with grid_cols[idx % 2]:
+                    st.text_area(f"{st_name} [{st_code}]", value=st_dl, height=70)
+        else:
+            _, state_abbr = STATE_IIN_MAP[pickup_selection]
+            gen_dl = generate_us_driver_license_number(state_abbr, dl_last_name)
+            st.success(f"Generated DL Number for **{pickup_selection}**:")
+            st.code(gen_dl, language="text")
+
+            c_btn1, c_btn2 = st.columns(2)
+            with c_btn1:
+                st.button(
+                    "Transfer to Barcode Tab (DAQ)",
+                    key="btn_send_dl_bc",
+                    on_click=set_to_barcode_dl,
+                    args=(gen_dl,),
+                    use_container_width=True,
+                )
+            with c_btn2:
+                st.button(
+                    "Transfer to MRZ Tab",
+                    key="btn_send_dl_mrz",
+                    on_click=set_to_mrz,
+                    args=(gen_dl, "USA"),
+                    use_container_width=True,
+        )
